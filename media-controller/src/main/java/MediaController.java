@@ -1,5 +1,6 @@
 import org.eclipse.paho.client.mqttv3.*;
 
+import org.json.JSONObject;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
@@ -8,11 +9,12 @@ import java.util.UUID;
 public class MediaController {
 
     private static final String BROKER_URL = "tcp://localhost:1883";
-    private static final String TOPIC = "/media/advtime/#";
+    private static final String TOPIC = "/media/#";
 
     //Lista fixa p/ ordenação
     private static final String[] EPISODES = {"ep18", "ep22"};
 
+    private static String currentSerie;
     private static String currentSeason;
     private static String currentEpisode;
 
@@ -41,26 +43,30 @@ public class MediaController {
         System.out.println("Mensagem recebida");
         System.out.println("Tópico: " + topic);
 
+        // /media/{serie}
         String[] parts = topic.split("/");
-
-        if (parts.length < 6) {
+        if (parts.length < 3) {
             System.out.println("Tópico inválido");
             return;
         }
 
-        String season = parts[3];
-        String episode = parts[4];
-        String action = parts[5];
+        String serie = parts[2];
 
-        String videoPath = buildPath(season, episode);
+        String payload = new String(message.getPayload());
+        System.out.println("Payload: " + payload);
+
+        JSONObject json;
+        try {
+            json= new JSONObject(payload);
+        } catch (Exception e){
+            System.out.println("Payload inválido (Esperado JSON)");
+            return;
+        }
+
+        String action = json.optString("action", "");
 
         switch (action) {
-            case "play" -> {
-                if (!isVlcRunning() || isDifferentEpisode(season, episode)) {
-                    ensureVlcWithMedia(videoPath, season, episode);
-                }
-                play();
-            }
+            case "play" -> handlePlay(serie, json);
             case "pause" -> pause();
             case "begin" -> begin();
             case "next" -> changeEpisode(+1);
@@ -70,6 +76,20 @@ public class MediaController {
             case "exit" -> exitProgram();
             default -> System.out.println("Ação desconhecida: " + action);
         }
+    }
+
+    private static void handlePlay(String serie, JSONObject json){
+        String season = json.optString("season", null);
+        String episode = json.optString("episode", null);
+
+        if (season != null && episode != null) {
+            String path = buildPath(serie, season, episode);
+
+            if (!isVlcRunning() || isDifferentEpisode(season, episode)) {
+                ensureVlcWithMedia(path, serie, season, episode);
+            }
+        }
+        play();
     }
 
     //======== EPISODES ========
@@ -89,9 +109,9 @@ public class MediaController {
         }
 
         String nextEpisode = EPISODES[newIndex];
-        String path = buildPath(currentSeason, nextEpisode);
+        String path = buildPath(currentSerie, currentSeason, nextEpisode);
 
-        ensureVlcWithMedia(path, currentSeason, nextEpisode);
+        ensureVlcWithMedia(path, currentSerie, currentSeason, nextEpisode);
         play();
     }
 
@@ -123,7 +143,8 @@ public class MediaController {
         vlcWriter = new BufferedWriter(new OutputStreamWriter(vlcProcess.getOutputStream()));
     }
 
-    private static void ensureVlcWithMedia(String path, String season, String episode) {
+    private static void ensureVlcWithMedia(String path, String serie, String season, String episode) {
+        currentSerie = serie;
         currentSeason = season;
         currentEpisode = episode;
 
@@ -191,8 +212,8 @@ public class MediaController {
 
     //======== UTILS ========
 
-    private static String buildPath(String season, String episode) {
-        return "/media/advtime/" + season + "/" + episode + ".mp4";
+    private static String buildPath(String serie, String season, String episode) {
+        return "/media/" + serie + "/" + season + "/" + episode + ".mp4";
     }
 
     private static boolean isDifferentEpisode(String season, String episode) {
