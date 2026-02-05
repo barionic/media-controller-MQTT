@@ -6,13 +6,17 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.util.UUID;
 
+import java.io.File;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
+
+
 public class MediaController {
 
     private static final String BROKER_URL = "tcp://localhost:1883";
     private static final String TOPIC = "/media/#";
-
-    //Lista fixa p/ ordenação
-    private static final String[] EPISODES = {"ep18", "ep22"};
 
     private static String currentSerie;
     private static String currentSeason;
@@ -95,33 +99,35 @@ public class MediaController {
     //======== EPISODES ========
 
     private static void changeEpisode(int delta) {
-        if (currentEpisode == null) {
+        if (currentEpisode == null || currentSeason == null || currentEpisode == null) {
             System.out.println("Nenhum episódio em execução");
             return;
         }
 
-        int index = indexOfEpisodes(currentEpisode);
-        int newIndex = index + delta;
+        List<String> episodes = listEpisodes(currentSerie, currentSeason);
 
-        if (newIndex < 0 || newIndex >= EPISODES.length) {
+        if (episodes.isEmpty()) {
+            System.out.println("Nenhum episódio encontrado no filesystem");
+            return;
+        }
+
+        int index = episodes.indexOf(currentEpisode);
+        if (index == -1){
+            System.out.println("Episódio atual não encontrado na lista");
+            return;
+        }
+
+        int newIndex = index + delta;
+        if (newIndex < 0 || newIndex >= episodes.size()) {
             System.out.println("Não há episódios nessa direção");
             return;
         }
 
-        String nextEpisode = EPISODES[newIndex];
+        String nextEpisode = episodes.get(newIndex);
         String path = buildPath(currentSerie, currentSeason, nextEpisode);
 
         ensureVlcWithMedia(path, currentSerie, currentSeason, nextEpisode);
         play();
-    }
-
-    private static int indexOfEpisodes(String ep) {
-        for (int i = 0; i < EPISODES.length; i++) {
-            if (EPISODES[i].equals(ep)) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     //======== VLC CORE ========
@@ -134,7 +140,7 @@ public class MediaController {
         System.out.println("Iniciando o VLC...");
 
         ProcessBuilder pb = new ProcessBuilder(
-                "vlc",
+                "cvlc",
                 "--intf", "rc", // RC = Remote Control; aceite de input em texto
                 "--quiet",
                 path
@@ -218,6 +224,21 @@ public class MediaController {
 
     private static boolean isDifferentEpisode(String season, String episode) {
         return !season.equals(currentSeason) || !episode.equals(currentEpisode);
+    }
+
+    private static List<String> listEpisodes(String serie, String season){
+        String dirPath = "/media/" + serie + "/" + season;
+        File dir = new File(dirPath);
+
+        if (!dir.exists() || !dir.isDirectory()){
+            System.out.println("Diretório não encontrado: "+ dirPath);
+            return List.of();
+        }
+        return Arrays.stream(dir.listFiles())
+                .filter(f -> f.isFile() && f.getName().endsWith(".mp4"))
+                .map(f -> f.getName().replace(".mp4", ""))
+                .sorted(Comparator.naturalOrder())
+                .collect(Collectors.toList());
     }
 
 }
