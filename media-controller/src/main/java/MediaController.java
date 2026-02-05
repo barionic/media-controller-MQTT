@@ -237,8 +237,14 @@ public class MediaController {
         return Arrays.stream(dir.listFiles())
                 .filter(f -> f.isFile() && f.getName().endsWith(".mp4"))
                 .map(f -> f.getName().replace(".mp4", ""))
-                .sorted(Comparator.naturalOrder())
+                .sorted(Comparator.comparingInt(MediaController::extractEpisodeNumber))
                 .collect(Collectors.toList());
+    }
+
+    private static int extractEpisodeNumber(String episodeName){
+        String digits = episodeName.replaceAll("\\D+", "");
+        if (digits.isEmpty()) return 0;
+        return Integer.parseInt(digits);
     }
 
 }
